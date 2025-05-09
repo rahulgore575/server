@@ -11,21 +11,29 @@ const PORT = process.env.PORT || 5000;
 const API_KEY = process.env.API_KEY; // For backend authentication
 const GET_API_BASE_URL = process.env.GET_API_BASE_URL; // For inventory fetch
 const POST_API_BASE_URL = process.env.POST_API_BASE_URL; // For ADF POST
-const CLIENT_KEYS = process.env.ALLOWED_CLIENT_KEYS?.split(',').map(k => k.trim()) || [];
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || [];
+const CLIENT_KEYS =
+  process.env.ALLOWED_CLIENT_KEYS?.split(",").map((k) => k.trim()) || [];
+const ALLOWED_ORIGINS =
+  process.env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [];
+
+const SECURE_DEALERSHIP_MAP = JSON.parse(
+  process.env.SECURE_DEALERSHIP_MAP || "{}"
+);
 
 // Middleware: CORS with origin check
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    } else {
-      return callback(new Error("Not allowed by CORS"));
-    }
-  },
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'x-client-key']
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      } else {
+        return callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "x-client-key"],
+  })
+);
 
 // Middleware: Body parsing
 app.use(express.json());
@@ -35,7 +43,9 @@ app.use(bodyParser.text({ type: "application/xml" }));
 app.use((req, res, next) => {
   const clientKey = req.headers["x-client-key"];
   if (!clientKey || !CLIENT_KEYS.includes(clientKey)) {
-    return res.status(403).json({ error: "Unauthorized request: Invalid or missing client key" });
+    return res
+      .status(403)
+      .json({ error: "Unauthorized request: Invalid or missing client key" });
   }
   next();
 });
@@ -51,17 +61,17 @@ app.get("/api/inventory/:uuid", async (req, res) => {
   try {
     // Get presigned URL by HEAD request
     const headResponse = await axios({
-      method: 'head',
+      method: "head",
       url: presignedUrlEndpoint,
       headers: {
         Authorization: `Basic ${API_KEY}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
       maxRedirects: 0,
-      validateStatus: status => status >= 200 && status < 400
+      validateStatus: (status) => status >= 200 && status < 400,
     });
 
-    const presignedUrl = headResponse.headers['location'];
+    const presignedUrl = headResponse.headers["location"];
     if (!presignedUrl) {
       return res.status(404).json({ error: "Presigned URL not found." });
     }
@@ -73,7 +83,7 @@ app.get("/api/inventory/:uuid", async (req, res) => {
     console.error("GET Error:", error.message);
     res.status(error.response?.status || 500).json({
       error: "Failed to fetch inventory data.",
-      details: error.response?.data || error.message
+      details: error.response?.data || error.message,
     });
   }
 });
@@ -83,18 +93,27 @@ app.get("/api/inventory/:uuid", async (req, res) => {
  * Proxies a POST request with ADF XML payload
  */
 app.post("/api/post-data", async (req, res) => {
+  const clientKey = req.headers["x-client-key"];
   const xml = req.body;
+
+  const dealershipInfo = SECURE_DEALERSHIP_MAP[clientKey];
+
+  if (!clientKey || !dealershipInfo) {
+    return res.status(403).json({ error: "Unauthorized: Invalid client key" });
+  }
 
   if (!xml || typeof xml !== "string" || xml.trim() === "") {
     return res.status(400).json({ error: "Invalid or missing ADF XML data." });
   }
 
+  const postUrl = `${POST_API_BASE_URL}${dealershipInfo.code}`;
+
   try {
-    const response = await axios.post(POST_API_BASE_URL, xml, {
+    const response = await axios.post(postUrl, xml, {
       headers: {
         "Content-Type": "application/xml",
-        Accept: "application/xml"
-      }
+        Accept: "application/xml",
+      },
     });
 
     res.status(response.status).send(response.data);
@@ -102,7 +121,7 @@ app.post("/api/post-data", async (req, res) => {
     console.error("POST Error:", error.message);
     res.status(error.response?.status || 500).json({
       error: "Failed to forward ADF XML.",
-      details: error.response?.data || error.message
+      details: error.response?.data || error.message,
     });
   }
 });
