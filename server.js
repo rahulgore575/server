@@ -92,21 +92,21 @@ app.get("/api/inventory/:uuid", async (req, res) => {
  * POST /api/post-data
  * Proxies a POST request with ADF XML payload
  */
+
 app.post("/api/post-data", async (req, res) => {
   const clientKey = req.headers["x-client-key"];
-  const xml = req.body;
-
   const dealershipInfo = SECURE_DEALERSHIP_MAP[clientKey];
-
   if (!clientKey || !dealershipInfo) {
     return res.status(403).json({ error: "Unauthorized: Invalid client key" });
   }
+
+  const xml = req.body;
 
   if (!xml || typeof xml !== "string" || xml.trim() === "") {
     return res.status(400).json({ error: "Invalid or missing ADF XML data." });
   }
 
-  const postUrl = `${POST_API_BASE_URL}${dealershipInfo.code}`;
+  const postUrl = `${POST_API_BASE_URL}/${dealershipInfo.code}`;
 
   try {
     const response = await axios.post(postUrl, xml, {
